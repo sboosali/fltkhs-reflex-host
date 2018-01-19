@@ -1,2 +1,38 @@
-dist/*
-.stack-work/*
+=1.2
+
+# my
+ignore/
+notes
+goals
+TODO
+cbits/main
+.projectile
+result/
+result
+
+# Haskell
+dist
+cabal-dev
+*.o
+*.hi
+*.chi
+*.chs.h
+.virtualenv
+.hsenv
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.config
+report.html
+.stack-work/
+
+# Emacs
+\#*
+*~
+.#*
+\#*\#
+*.log
+TAGS
+
+# OS X
+.DS_Store
+
