@@ -1,9 +1,10 @@
 { mkDerivation
 
 , base, dependent-sum, fltkhs, mtl, ref-tf, reflex
-, stdenv, text, transformers
+, stdenv, text, transformers, spiros
 
 , fltk, libjpeg
+# , cabal-install
 }:
 mkDerivation {
   pname = "fltkhs-reflex";
@@ -13,11 +14,15 @@ mkDerivation {
   isExecutable = true;
 
   libraryHaskellDepends = [
-    base dependent-sum fltkhs mtl ref-tf reflex text transformers
+    base dependent-sum fltkhs mtl ref-tf reflex spiros text transformers
   ];
-  librarySystemDepends  = [ 
+  librarySystemDepends  = [
     # fltk libjpeg 
+    # cabal-install
   ];
+
+  # buildDepends = [ cabal-install ];
+  # setupDepends = [ cabal-install ];
   
   executableHaskellDepends = [ base ];
 

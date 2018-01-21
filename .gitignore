@@ -9,6 +9,7 @@ cbits/main
 .projectile
 result/
 result
+result-*
 
 # Haskell
 dist

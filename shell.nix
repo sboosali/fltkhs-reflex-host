@@ -17,6 +17,8 @@
 
 */
 
+########################################
+  
 let
 
   inherit (nixpkgs) pkgs;
@@ -25,29 +27,7 @@ let
   lib = import "${nixpkgs.path}/pkgs/development/haskell-modules/lib.nix" { pkgs = nixpkgs; };
   hs = pkgs.haskell.lib;
 
-  haskellPackagesWithCompiler = 
-    if compiler == "default"
-    then pkgs.haskellPackages
-    else pkgs.haskell.packages.${compiler};
-
-  haskellPackagesWithProfiling = 
-    if withProfiling
-    then haskellPackagesWithCompiler.override {
-           overrides = self: super: {
-             mkDerivation = args: super.mkDerivation (args // { enableLibraryProfiling = true; });
-           };
-         }
-    else haskellPackagesWithCompiler;
-                 
-  haskellPackagesWithHoogle =
-    if withHoogle
-    then haskellPackagesWithProfiling.override {
-           overrides = self: super: {
-             ghc = super.ghc // { withPackages = super.ghc.withHoogle; };
-             ghcWithPackages = self.ghc.withPackages;
-           };
-         }
-    else haskellPackagesWithProfiling;
+  ########################################
 
   cabal2nixResult = src: nixpkgs.runCommand "cabal2nixResult" {
     buildCommand = ''
@@ -104,8 +84,36 @@ let
     # };
   };
 
+  ########################################
+
+  haskellPackagesWithCompiler = 
+    if compiler == "default"
+    then pkgs.haskellPackages
+    else pkgs.haskell.packages.${compiler};
+
+  haskellPackagesWithProfiling = 
+    if withProfiling
+    then haskellPackagesWithCompiler.override {
+           overrides = self: super: {
+             mkDerivation = args: super.mkDerivation (args // { enableLibraryProfiling = true; });
+           };
+         }
+    else haskellPackagesWithCompiler;
+                 
+  haskellPackagesWithHoogle =
+    if withHoogle
+    then haskellPackagesWithProfiling.override {
+           overrides = self: super: {
+             ghc = super.ghc // { withPackages = super.ghc.withHoogle; };
+             ghcWithPackages = self.ghc.withPackages;
+           };
+         }
+    else haskellPackagesWithProfiling;
+
   modifiedHaskellPackages = haskellPackagesWithHoogle.override {
     overrides = self: super: {
+
+      spiros = self.callPackage ../spiros {};
 
       fltkhs = self.callPackage ../fltkhs {};
 
@@ -130,15 +138,58 @@ let
       # Git dependencies:
       # mtl = self.callPackage (cabal2nixResult sources.mtl) {};
     };
-  }; 
+  };
 
-  drv = modifiedHaskellPackages.callPackage ./. {};
+  ########################################
+  
+  installationDerivation = modifiedHaskellPackages.callPackage ./. {};
 
-  env = if pkgs.lib.inNixShell then drv.env else drv;
+  # development environment
+  # for `nix-shell --pure`
+  developmentDerivation = hs.linkWithGold 
+      (hs.addBuildDepends installationDerivation developmentPackages);
+      # addBuildTools v addSetupDepends v addBuildDepends
+
+  developmentPackages = developmentHaskellPackages
+                     # ++ developmentEmacsPackages 
+                     ++ developmentSystemPackages;
+
+  developmentSystemPackages = with pkgs; [
+  
+      cabal-install
+  
+      fltk
+      # for interpreter, 'undefined symbols' linker errors
+
+      inotify-tools
+      # since fltkhs breaks ghci 
+  
+      # emacs
+      # git
+      
+    ];
+
+   developmentHaskellPackages = with modifiedHaskellPackages; [
+  
+      # ghcid
+      # ghc-mod
+
+      hasktags
+  
+    ];
+
+   # developmentHaskellPackages = with Packages; [
+   #    dante
+   #  ];
+
+  env = hs.shellAware developmentDerivation;
+        # if pkgs.lib.inNixShell then drv.env else drv;
 
 in
 
   env
+
+########################################
 
 /*
 

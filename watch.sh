@@ -16,7 +16,9 @@
 
 ########################################
 
-BUILD_COMMAND='cabal build'
+BUILD_COMMAND='cabal build --ghc-options="-fno-code -fobject-code -ferror-spans"'
+
+# TODO also watch .cabal
 
 WATCHED_DIRECTORY=./sources/
 
@@ -31,6 +33,9 @@ OLD_TIMESTAMP="xx:xx:xx"
 NEW_TIMESTAMP="yy:yy:yy"
 
 function debounce () {
+  #TODO does `cabal build` touch (pseudo-modifies) each file? 
+  # events are duplicated retriggering
+  # oh, cabal build is too slow, the build should be queued
 
   # seconds resolution
   NEW_TIMESTAMP=`date '+%T'`
@@ -48,6 +53,11 @@ function debounce () {
   return $EXIT_CODE
 }
 
+echo Building once initially
+# don't exit if the build fails
+eval "$BUILD_COMMAND" || true 
+echo
+
 echo Watching "$WATCHED_DIRECTORY"
 echo
 
@@ -56,12 +66,15 @@ inotifywait --monitor --event $INOTIFY_EVENTS --recursive $WATCHED_DIRECTORY  | 
   if debounce; then
   filepath="${directory}${filename}"
   echo
+  echo -en "\ec" # hard clear-screen
   echo '----------------------------------------'
   echo ${filepath}
+  echo ${event}
   echo
 
-  # needed for a command with spaces
-  eval "$BUILD_COMMAND"
+  # `eval` needed for a command with spaces
+  # `&` needed, i.e. async, to avoid sabotaging `debounce`.
+  eval "$BUILD_COMMAND" &
   fi
 done
 
