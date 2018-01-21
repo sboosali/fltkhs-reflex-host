@@ -1,25 +1,35 @@
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RankNTypes, OverloadedStrings #-}
 module Reflex.FLTK.Example where
 
 import Reflex as Reflex
-import Reflex.Host.Class (newEventWithTriggerRef, runHostFrame, fireEvents)
+import Reflex.Host.Class (EventTrigger, MonadReflexCreateTrigger, newEventWithTriggerRef, runHostFrame, fireEvents)
 import Data.Dependent.Sum (DSum ((:=>)))
+import Control.Monad.Ref (MonadRef(..))
 
-import qualified Graphics.UI.FLTK.LowLevel.FL as FL
-import Graphics.UI.FLTK.LowLevel.Fl_Types
-import Graphics.UI.FLTK.LowLevel.FLTKHS as FL
+import qualified Graphics.UI.FLTK.LowLevel.FL              as FL
+import qualified Graphics.UI.FLTK.LowLevel.FLTKHS          as FL 
+import qualified Graphics.UI.FLTK.LowLevel.Fl_Types        as FL
+import qualified Graphics.UI.FLTK.LowLevel.Fl_Enumerations as FL
+
+import Graphics.UI.FLTK.LowLevel.Fl_Types hiding (Ref)
+import Graphics.UI.FLTK.LowLevel.FLTKHS as FL hiding (Ref)
 import Graphics.UI.FLTK.LowLevel.Fl_Enumerations as FL
 
 import Data.Text as T
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.Identity (Identity(..))
-import Control.Monad.IO.Class (liftIO)
-import Data.IORef (readIORef)
+import Control.Monad.IO.Class (MonadIO,liftIO)
+import Data.IORef (IORef,readIORef)
+import Control.Arrow
+import Data.Function
+
+import Prelude.Spiros
+import qualified Prelude
 
 ----------------------------------------
 
-main :: IO ()
-main = host guest
+-- nothing = return ()
 
 ----------------------------------------
 
@@ -27,12 +37,144 @@ type TypingApp t m = (Reflex t, MonadHold t m, MonadFix m)
                   => Reflex.Event t Char
                   -> m (Behavior t String)
 
+type FLTKWindowHandler 
+   = FL.Ref DoubleWindow 
+  -> FL.Event 
+  -> IO (Either UnknownEvent ())
+
+type FLTKWidgetHandler
+   = FL.Ref DoubleWindow 
+  -> FL.Event 
+  -> IO (Either UnknownEvent ())
+
+----------------------------------------
+
+main :: IO ()
+-- main = host guest
+main = nothing
+
 ----------------------------------------
 
 guest :: TypingApp t m
 guest e = do
   d <- foldDyn (:) [] e
   return $ fmap Prelude.reverse $ (current d)
+
+----------------------------------------
+
+{-| forward char-keydown events from fltk to reflex. 
+
+-}
+
+forwardCharPresses = makeWidgetHandlerForReflex handleCharPresses
+
+----------------------------------------
+
+-- newEventWithTriggerRef :: (MonadReflexCreateTrigger t m, MonadRef m, Ref m ~ Ref IO) => m (Event t a, Ref m (Maybe (EventTrigger t a)))
+
+{-| 
+@handle@
+* returns Nothing to handle an fltk event via the widget's superclass handler.  
+* returns @Just x@ to (1) handle the event and (2) transform the value to an @x@, which signals 
+handled events can be then dropped via @reflex@, for example with 'fmapMaybe'. 
+If this is inefficient, we can distinguish the failure cases (like with @Either Bool a@). 
+-}
+-- makeWindowHandlerForReflex
+
+{-| 
+
+@handle@
+
+* returns Nothing to handle an fltk event via the widget's superclass handler.  
+* returns @Just x@ to (1) handle the event and (2) transform the value to an @x@, which signals 
+
+handled events can be then dropped via @reflex@, for example with 'fmapMaybe'. 
+If this is inefficient, we can distinguish the failure cases (like with @Either Bool a@). 
+
+-}
+-- makeWidgetHandlerForReflex
+ -- :: ( )
+ -- -- :: ( MonadReflexCreateTrigger t m
+ -- --    , MonadRef m, Ref m ~ IORef
+ -- --    , MonadIO m
+ -- --    ) 
+ -- => (FL.Ref DoubleWindow -> FL.Event -> IO (Maybe a))
+ -- -> IORef (Maybe (EventTrigger t a)) 
+ -- -> FLTKWidgetHandler
+
+makeWidgetHandlerForReflex handle eTriggerRef = \window fltkEvent -> do
+  let
+
+      noWasntHandled _window _fltkEvent = do
+        handleSuper _window _fltkEvent
+
+      yesWasHandled triggerReference x = do
+        fireEvent triggerReference x 
+        Right <$> nothing
+
+      handleOrDefault triggerReference _window _fltkEvent =
+        handle _window _fltkEvent >>= maybe (noWasntHandled _window _fltkEvent) (yesWasHandled triggerReference)
+--        handle >=> maybe (noWasntHandled _fltkEvent) (yesWasHandled triggerReference)        
+
+      fltkhs2reflex = 
+        handleOrDefault eTriggerRef window 
+
+  -- consume an FLTK event,
+  -- producing a Reflex event.
+  fltkhs2reflex fltkEvent
+
+  where
+
+  noListeners = do
+      nothing
+
+  someListeners x reflexEventTrigger = do
+      fireEvents [reflexEventTrigger :=> Identity x]
+      nothing
+
+  -- EventTrigger t a
+  fireEvent triggerReference x = runSpiderHost $ do
+      trigger <- liftIO $ readIORef triggerReference
+      trigger & maybe noListeners (someListeners x)
+
+-- runSpiderHost $ do
+
+----------------------------------------
+
+-- |
+-- loses information. 
+-- e.g. returns Keydown, 
+-- but can't tell you which key was pressed, or whether the key was a character, or any other predicate
+
+handleEveryEvent :: FL.Ref FL.DoubleWindow ->  FL.Event -> IO (Maybe (FL.Event))
+handleEveryEvent _ = Just >>> return
+
+-- |
+handleCharPresses :: FL.Ref FL.DoubleWindow -> FL.Event -> IO (Maybe Char)
+handleCharPresses _ = \case 
+
+  Keydown -> do
+       keyPressed <- FL.eventText
+       let charPressed = firstChar keyPressed & maybe noIsntChar yesIsChar
+       return charPressed
+
+  _ -> do 
+      return Nothing
+
+  where
+  firstChar = T.uncons > fmap fst
+  -- `maybe` is redundant, but it's explicit
+  noIsntChar = Nothing
+  yesIsChar  = Just
+
+
+{-
+
+  let fltk2reflex 
+     = handleOrDefault window fltkEvent
+     & maybe nothing fireEvent
+  mX <- handleOrDefault window fltkEvent
+-}
 
 ----------------------------------------
 
@@ -88,10 +230,23 @@ outputChanged buffer newText = do
       return (newText /= oldLastLine)
     else return (not (T.null newText))
 
+withWindow :: FL.Ref DoubleWindow -> (FL.Ref DoubleWindow -> IO a) -> IO a
+withWindow w k = do
+      begin w
+      x <- k w
+      end w
+      return x
+
+----------------------------------------
+
+{-
+
 host :: (forall t m. TypingApp t m) -> IO ()
 host myGuest =
   runSpiderHost $ do
+
     (e, eTriggerRef) <- newEventWithTriggerRef
+
     let windowHandler :: FL.Ref DoubleWindow -> FL.Event -> IO (Either UnknownEvent ())
         windowHandler window fltkEvent =
           case fltkEvent of
@@ -111,15 +266,16 @@ host myGuest =
     b <- runHostFrame (myGuest e)
     liftIO $ do
       w <- makeWindow windowHandler
-      begin w
-      makeDescription
-      (buffer,o) <- makeOutput
-      end w
+
+      (buffer,o) <- withWindow w $ \_ -> do
+          makeDescription
+          makeOutput
+
       setResizable w (Just o)
       showWidget w
       go (do
            leftTodo <- FL.wait
-           return (leftTodo > 0)
+           return (leftTodo >= 1)
          )
          (runSpiderHost $ do
             output <- runHostFrame (sample b)
@@ -138,4 +294,22 @@ host myGuest =
         then action >> go predicateM action
         else return ()
 
+-}
+
+
 ----------------------------------------
+
+{-
+
+makeWidgetHandlerForReflex
+ :: ()
+ -- :: ( MonadReflexCreateTrigger t m
+ --    , MonadRef m, Ref m ~ IORef
+ --    , MonadIO m
+ --    ) 
+ => (FL.Ref DoubleWindow -> FL.Event -> IO (Maybe a))
+ -> IORef (Maybe (EventTrigger t a)) 
+ -> FLTKWidgetHandler
+
+
+-}
