@@ -16,7 +16,8 @@
 
 ########################################
 
-BUILD_COMMAND='cabal build --ghc-options="-fno-code -fobject-code -ferror-spans"'
+BUILD_COMMAND='cabal build --ghc-options="-fno-code -fobject-code -ferror-spans" 1> /dev/null ; cabal build > /dev/null'
+# true build after type checking
 
 # TODO also watch .cabal
 
@@ -31,6 +32,8 @@ INOTIFY_EVENTS='modify,create,delete'
 # stubs
 OLD_TIMESTAMP="xx:xx:xx"
 NEW_TIMESTAMP="yy:yy:yy"
+
+RUNNING_BUILD=""
 
 function debounce () {
   #TODO does `cabal build` touch (pseudo-modifies) each file? 
@@ -53,12 +56,18 @@ function debounce () {
   return $EXIT_CODE
 }
 
-echo Building once initially
-# don't exit if the build fails
-eval "$BUILD_COMMAND" || true 
+########################################
+
+echo '[Building once initially]'
 echo
 
-echo Watching "$WATCHED_DIRECTORY"
+# don't exit if the build fails
+# eval "$BUILD_COMMAND" || true 
+eval "$BUILD_COMMAND" & 
+RUNNING_BUILD="$!" 
+echo
+
+echo '['Watching "$WATCHED_DIRECTORY"']'
 echo
 
 inotifywait --monitor --event $INOTIFY_EVENTS --recursive $WATCHED_DIRECTORY  | grep "$WATCHED_REGEX" --line-buffered  | grep -E -v "$IGNORED_REGEX" --line-buffered  | while read -r directory event filename; do
@@ -72,9 +81,21 @@ inotifywait --monitor --event $INOTIFY_EVENTS --recursive $WATCHED_DIRECTORY  | 
   echo ${event}
   echo
 
-  # `eval` needed for a command with spaces
-  # `&` needed, i.e. async, to avoid sabotaging `debounce`.
-  eval "$BUILD_COMMAND" &
+  if [ ! -z "${RUNNING_BUILD}" ]; then
+     echo "kill ${RUNNING_BUILD}" 
+     kill "${RUNNING_BUILD}" || true
+       # don't fail if the build already finished. 
+       # kill the last build (if it's currently running),
+       # since the source has changed,
+       # to avoid multiple redundant simultaneous builds. 
+  fi
+  eval "$BUILD_COMMAND" & 
+   # `eval` needed for a command with spaces
+   # `&` needed, i.e. async, to avoid sabotaging `debounce`.
+   #   echo -en "\ff" doesn't work
+  RUNNING_BUILD="$!" 
+    # the process identifier of the most recently backgrounded process
+
   fi
 done
 

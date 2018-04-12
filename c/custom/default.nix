@@ -16,8 +16,12 @@
 # fltk-image
 
 let
-  name = "fltk-examples-${version}";
+  name = "fltk-example-${subname}-${version}";
   version = "0.1";
+
+  filename = "fltk-${subname}";
+  subname = "custom";
+
 in
 
 stdenv.mkDerivation {
@@ -32,18 +36,12 @@ stdenv.mkDerivation {
   ];
   
   buildPhase = ''
-    # gcc -o fltk-image fltk-image.cxx 
-    fltk-config --use-images --compile fltk-image.cxx
+    fltk-config --use-images --compile ${filename}.cxx 
   '';
 
   installPhase = ''
     mkdir -p $out/bin
-    cp fltk-image $out/bin
+    cp ${filename} $out/bin
   '';
-
-  meta = {
-    description = "runnable FLTK examples";'
-#    maintainers = with lib.maintainers; [ sboosali ];
-  };
 
 }

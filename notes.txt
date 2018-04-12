@@ -1,0 +1,8 @@
+----------------------------------------
+REPL
+
+ cabal repl fltkhs-reflex --ghc-options="-I${fltk}/include/FL/"
+
+NO
+
+----------------------------------------

@@ -50,8 +50,8 @@ type FLTKWidgetHandler
 ----------------------------------------
 
 main :: IO ()
--- main = host guest
-main = nothing
+main = host guest
+--main = nothing
 
 ----------------------------------------
 
@@ -102,6 +102,7 @@ If this is inefficient, we can distinguish the failure cases (like with @Either 
  -- -> IORef (Maybe (EventTrigger t a)) 
  -- -> FLTKWidgetHandler
 
+
 makeWidgetHandlerForReflex handle eTriggerRef = \window fltkEvent -> do
   let
 
@@ -144,7 +145,7 @@ makeWidgetHandlerForReflex handle eTriggerRef = \window fltkEvent -> do
 -- |
 -- loses information. 
 -- e.g. returns Keydown, 
--- but can't tell you which key was pressed, or whether the key was a character, or any other predicate
+-- but can't tell you which key was pressed, or whether the key was +-------a character, or any other predicate
 
 handleEveryEvent :: FL.Ref FL.DoubleWindow ->  FL.Event -> IO (Maybe (FL.Event))
 handleEveryEvent _ = Just >>> return
@@ -177,6 +178,19 @@ handleCharPresses _ = \case
 -}
 
 ----------------------------------------
+
+-- createWindow :: FLTKWidgetHandler -> IO (FL.Ref DoubleWindow)
+createResizeableTextualWindow handler = do
+      w <- makeWindow handler
+
+      (buffer,o) <- withWindow w $ \_ -> do
+          makeDescription
+          makeOutput
+
+      setResizable w (Just o)
+      showWidget w
+
+      return (w,buffer,o)
 
 makeWindow :: (FL.Ref DoubleWindow -> FL.Event -> IO (Either UnknownEvent ())) -> IO (FL.Ref DoubleWindow)
 makeWindow handler = do
@@ -230,6 +244,13 @@ outputChanged buffer newText = do
       return (newText /= oldLastLine)
     else return (not (T.null newText))
 
+{- 
+
+any widgets the continuation `k` creates become children of `w`.
+
+widgets created between w.begin() and w.end() become children of the "begun" widget `w`. 
+
+-}
 withWindow :: FL.Ref DoubleWindow -> (FL.Ref DoubleWindow -> IO a) -> IO a
 withWindow w k = do
       begin w
@@ -237,46 +258,15 @@ withWindow w k = do
       end w
       return x
 
+
 ----------------------------------------
 
-{-
+-- custom FL.run()
+flWaiting = do
+  leftTodo <- FL.wait
+  return (leftTodo >= 1)
 
-host :: (forall t m. TypingApp t m) -> IO ()
-host myGuest =
-  runSpiderHost $ do
-
-    (e, eTriggerRef) <- newEventWithTriggerRef
-
-    let windowHandler :: FL.Ref DoubleWindow -> FL.Event -> IO (Either UnknownEvent ())
-        windowHandler window fltkEvent =
-          case fltkEvent of
-            Keydown -> do
-              keyPressed <- FL.eventText
-              eventTrigger <- liftIO (readIORef eTriggerRef)
-              if (not (T.null keyPressed))
-                then runSpiderHost $
-                       case eventTrigger of
-                          Nothing -> return ()
-                          Just event ->
-                            fireEvents [event :=> Identity (Prelude.head (T.unpack keyPressed))] >>
-                            liftIO (return ())
-                else return ()
-              return (Right ())
-            _ -> handleSuper window fltkEvent
-    b <- runHostFrame (myGuest e)
-    liftIO $ do
-      w <- makeWindow windowHandler
-
-      (buffer,o) <- withWindow w $ \_ -> do
-          makeDescription
-          makeOutput
-
-      setResizable w (Just o)
-      showWidget w
-      go (do
-           leftTodo <- FL.wait
-           return (leftTodo >= 1)
-         )
+appendBehaviorToBuffer b buffer = do
          (runSpiderHost $ do
             output <- runHostFrame (sample b)
             liftIO $ do
@@ -286,6 +276,26 @@ host myGuest =
                   emptyBuffer <- getText buffer >>= return . T.null
                   appendToBuffer buffer (T.pack (if emptyBuffer then output else ("\n" ++ output)))
                 else return ())
+
+----------------------------------------
+
+host :: (forall t m. TypingApp t m) -> IO ()
+host myGuest =
+  runSpiderHost $ do
+
+    (e, eTriggerRef) <- newEventWithTriggerRef
+
+    let windowHandler :: FL.Ref DoubleWindow -> FL.Event -> IO (Either UnknownEvent ())
+        windowHandler = makeWidgetHandlerForReflex handleCharPresses eTriggerRef
+
+    b <- runHostFrame (myGuest e)
+
+    liftIO $ do
+
+      (w,buffer,o) <- createResizeableTextualWindow windowHandler
+
+      go flWaiting (appendBehaviorToBuffer b buffer)
+
   where
     go :: IO Bool -> IO ()  -> IO ()
     go predicateM action = do
@@ -293,9 +303,6 @@ host myGuest =
       if predicate
         then action >> go predicateM action
         else return ()
-
--}
-
 
 ----------------------------------------
 
