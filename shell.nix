@@ -113,9 +113,11 @@ let
   modifiedHaskellPackages = haskellPackagesWithHoogle.override {
     overrides = self: super: {
 
-      spiros = self.callPackage ../spiros {};
+      spiros = self.callCabal2nix "spiros" ../spiros {};
 
-      fltkhs = self.callPackage ../fltkhs {};
+      fltkhs = self.callPackage ../mtg/fltkhs {
+        inherit (self.pkgs) mesa;
+      };
 
       exception-transformers = hs.dontCheck super.exception-transformers;
             # Setup: Encountered missing dependencies:
